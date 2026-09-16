@@ -2,6 +2,47 @@
 
 自媒体内容管理一体化工作台，纯前端实现，数据本地存储，支持 GitHub 云同步。
 
+
+## 本 Fork / 增强版说明
+
+基于 [talkershow/opc-workbench](https://github.com/talkershow/opc-workbench) 上游纯前端工作台，在**不重写框架**的前提下补齐 React 版 v0.2/v0.3 验证过的能力。
+
+### 相对原版新增
+
+| 能力 | 入口 | 说明 |
+|------|------|------|
+| AI 设置（OpenAI-compatible） | 左下角「🤖 AI」 | baseURL / apiKey / model 存 localStorage；测试连接；Key 不进导出/GitHub |
+| 邮箱 AI 澄清 | 数据邮箱卡片「🤖 AI」 | 草稿→确认后写回分类/形式/标题/摘要 |
+| 选题 AI 三维评分 | 选题弹窗 / 内容评分弹窗 | 草稿填入表单，需点保存入库 |
+| AI 日复盘草稿 | 复盘页 / 仪表盘快捷 | 填入日复盘字段，需保存 |
+| 去 AI 味 | 内容看板「二次加工」弹窗 | 改写加工笔记，需保存 |
+| Metric CSV 导入 | 数据追踪 →「导入 CSV」 | 表头：date,platform,views,likes/engagements,followers,title…（支持中文表头） |
+| RSS → 数据邮箱 | 数据邮箱「📡 RSS」 | 可选 allorigins 代理；按 URL/标题去重 |
+| T+3 复盘债务 | 仪表盘区块 | 已发布满 3 天且未清除 → 去复盘 / 忽略 |
+| 选题一键开工 | 选题表「开工」 | 置为「创作中」并初始化加工草稿，打开加工弹窗 |
+
+### 保留原版能力
+
+仪表盘 KPI + ECharts、选题/内容看板、GitHub 同步、SOP 工具箱、localStorage / local-server / 云同步三模式。
+
+### AI 配置步骤
+
+1. 点击左下角 **🤖 AI**
+2. 填写 Base URL（如 `https://api.openai.com/v1` 或兼容网关）、API Key、Model
+3. **保存** → **测试连接**
+4. 在邮箱 / 选题 / 复盘 / 加工弹窗使用对应 AI 按钮；均为「草稿→确认」
+
+### CSV 示例
+
+```csv
+date,platform,views,likes,comments,followers,title
+2026-09-10,B站,1200,85,12,5,示例标题
+2026-09-11,抖音,800,40,3,2,另一条
+```
+
+平台可用中文（B站/抖音/小红书…）或英文别名（bilibili/douyin/xiaohongshu…）。
+
+---
 ## ✨ 功能模块
 
 | 模块 | 功能 |
@@ -14,6 +55,9 @@
 | 📝 **复盘** | 日复盘（3 分钟，状态/完成/亮点/反思/明日重点，昨日计划继承）+ 周复盘（四问法）+ 历史记录 |
 | 🧰 **SOP 工具箱** | 内容结构模板、发布前检查清单、各平台规格速查、标题公式库 |
 | ☁️ **GitHub 同步** | 数据云端备份，多设备同步，自动同步（防抖 5 秒）+ 手动同步 |
+| 🤖 **AI（增强）** | OpenAI-compatible 设置；邮箱澄清 / 选题评分 / 日复盘草稿 / 去 AI 味（草稿→确认） |
+| 📡 **RSS / CSV（增强）** | RSS 拉进数据邮箱（可代理去重）；Metric CSV 批量导入 |
+| ⏱ **T+3 / 开工（增强）** | 仪表盘复盘债务；选题一键开工并建加工草稿 |
 
 ## 🚀 使用
 
@@ -52,7 +96,8 @@ node local-server.js
 opc-workbench/
 ├── index.html           # 主页面（HTML + 内联 CSS）
 ├── assets/
-│   ├── app.js           # 核心逻辑（路由、DB、存储、同步、各模块渲染）
+│   ├── app.js           # 核心逻辑（路由、DB、存储、同步、各模块渲染）+ 增强接线
+│   ├── ai.js            # AI / RSS / CSV / T+3 工具模块（增强版）
 │   └── charts.js        # ECharts 图表渲染
 ├── _shared/
 │   └── js/

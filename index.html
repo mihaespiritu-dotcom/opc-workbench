@@ -648,8 +648,10 @@ html[data-theme="light"] .toast { color: #fff; }
     <a class="nav-item" data-page="toolkit"><span class="nav-icon">🧰</span>SOP 工具箱</a>
   </nav>
   <div class="sidebar-footer">
-    <div>v1.0 · 数据本地存储</div>
+    <div>v1.1 增强 · 数据本地存储</div>
     <div style="margin-top:4px;">
+      <a href="#" onclick="openAiSettings();return false" style="color:var(--accent);text-decoration:none;font-weight:600;">🤖 AI</a>
+      <span style="margin:0 4px;">·</span>
       <a href="#" onclick="openSyncSettings();return false" style="color:var(--accent);text-decoration:none;font-weight:600;">☁ 同步</a>
       <span style="margin:0 4px;">·</span>
       <a href="#" onclick="exportData();return false" style="color:var(--accent);text-decoration:none;font-weight:600;">导出</a>
@@ -757,6 +759,28 @@ html[data-theme="light"] .toast { color: #fff; }
         </div>
       </div>
 
+      <div class="grid-2" style="margin-bottom:20px;">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">⏱ 复盘债务（T+3）</div>
+            <span class="tag tag-yellow" id="dash-t3-count">0</span>
+          </div>
+          <div id="dash-t3-list" style="font-size:13px;">
+            <div class="empty-state" style="padding:12px;"><div class="empty-text">暂无到期复盘债务 ✓</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">🤖 AI 快捷动作</div><span class="tag tag-muted">草稿→确认</span></div>
+          <div class="grid-2" style="gap:10px;">
+            <button class="btn btn-sm" onclick="aiDailyReviewDraft()" style="justify-content:flex-start;">📝 AI 日复盘草稿</button>
+            <button class="btn btn-sm" onclick="openFirstTopicForAiScore()" style="justify-content:flex-start;">💡 打开选题评分</button>
+            <button class="btn btn-sm" onclick="openAiSettings()" style="justify-content:flex-start;">⚙️ AI 设置</button>
+            <button class="btn btn-sm" onclick="openRssModal()" style="justify-content:flex-start;">📡 RSS 源</button>
+          </div>
+          <p style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5;">全部 AI 均为「生成草稿 → 你确认后入库」，密钥只存本机 localStorage。</p>
+        </div>
+      </div>
+
       <div class="grid-2">
         <div class="card">
           <div class="card-header"><div class="card-title">内容增长信号</div><span class="tag tag-accent">LIVE</span></div>
@@ -797,6 +821,7 @@ html[data-theme="light"] .toast { color: #fff; }
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;">
             <button class="btn btn-sm" onclick="markAllRead()">✓ 全部已读</button>
+            <button class="btn btn-sm" onclick="openRssModal()" title="配置并拉取 RSS 进邮箱">📡 RSS</button>
             <button class="btn btn-sm" onclick="syncAiHot(this)" style="background:var(--green);color:#fff;" title="拉取过去 24 小时 AI HOT 精选，合并到数据邮箱（自动去重）">🤖 同步 AI HOT</button>
             <button class="btn btn-primary btn-sm" onclick="openInboxAddModal()">+ 手动添加</button>
           </div>
@@ -923,7 +948,11 @@ html[data-theme="light"] .toast { color: #fff; }
       <div class="card">
         <div class="card-header">
           <div class="card-title">全部数据记录</div>
-          <button class="btn btn-primary btn-sm" onclick="openDataModal()">+ 记数据</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn btn-sm" onclick="document.getElementById('metricCsvInput').click()">📥 导入 CSV</button>
+            <input type="file" id="metricCsvInput" accept=".csv,text/csv" style="display:none;" onchange="importMetricCsv(event)">
+            <button class="btn btn-primary btn-sm" onclick="openDataModal()">+ 记数据</button>
+          </div>
         </div>
         <div id="dataTableWrap">
           <div class="empty-state">
@@ -980,7 +1009,11 @@ html[data-theme="light"] .toast { color: #fff; }
             <div class="form-label">明日重点</div>
             <textarea class="form-textarea" id="daily-tomorrow" placeholder="明天最优先要做的事..." style="min-height:40px;"></textarea>
           </div>
-          <button class="btn btn-primary" onclick="saveDailyReview()">💾 保存日复盘</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button class="btn btn-primary" onclick="saveDailyReview()">💾 保存日复盘</button>
+            <button class="btn" onclick="aiDailyReviewDraft()" id="btn-ai-daily">🤖 AI 日复盘草稿</button>
+            <span style="font-size:11px;color:var(--muted);">草稿填入表单后请确认再保存</span>
+          </div>
         </div>
       </div>
 
@@ -1131,6 +1164,7 @@ html[data-theme="light"] .toast { color: #fff; }
       </div>
     </div>
     <div class="modal-footer">
+      <button class="btn" onclick="aiTopicScoreFromModal()" id="btn-ai-topic-score">🤖 AI 三维评分</button>
       <button class="btn" onclick="closeModal('topicModal')">取消</button>
       <button class="btn btn-primary" onclick="saveTopic()">保存</button>
     </div>
@@ -1369,6 +1403,8 @@ html[data-theme="light"] .toast { color: #fff; }
       </div>
     </div>
     <div class="modal-footer">
+      <button class="btn" onclick="aiTopicScoreFromScoreModal()">🤖 AI 建议分</button>
+      <div id="ai-score-reason" style="flex:1;font-size:12px;color:var(--muted);"></div>
       <button class="btn" onclick="closeModal('scoreModal')">取消</button>
       <button class="btn btn-primary" onclick="saveScore()">保存评分</button>
     </div>
@@ -1422,6 +1458,7 @@ html[data-theme="light"] .toast { color: #fff; }
       </div>
     </div>
     <div class="modal-footer">
+      <button class="btn" onclick="aiDeAiProcessNotes()">✨ 去 AI 味</button>
       <button class="btn" onclick="closeModal('processModal')">取消</button>
       <button class="btn btn-primary" onclick="saveProcess()">保存</button>
     </div>
@@ -1490,11 +1527,104 @@ html[data-theme="light"] .toast { color: #fff; }
   </div>
 </div>
 
+
+<!-- ========== 模态框：AI 设置 ====== -->
+<div class="modal-overlay" id="aiSettingsModal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title">🤖 AI 设置（OpenAI-compatible）</div>
+      <button class="modal-close" onclick="closeModal('aiSettingsModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;">
+        API Key 只存浏览器 localStorage，不会写入导出 JSON / GitHub data.json。全部能力均为「生成草稿 → 你确认后入库」，不自动发帖。
+      </p>
+      <div class="form-group full" style="margin-bottom:12px;">
+        <div class="form-label">Base URL</div>
+        <input class="form-input" id="ai-baseURL" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="form-group full" style="margin-bottom:12px;">
+        <div class="form-label">API Key</div>
+        <input class="form-input" id="ai-apiKey" type="password" autocomplete="off" placeholder="sk-...">
+      </div>
+      <div class="form-group full" style="margin-bottom:12px;">
+        <div class="form-label">Model</div>
+        <input class="form-input" id="ai-model" placeholder="gpt-4o-mini">
+      </div>
+      <div id="aiSettingsMsg" style="font-size:12px;margin-bottom:8px;min-height:18px;"></div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap;">
+      <button class="btn" onclick="clearAiSettings()">清空</button>
+      <button class="btn" onclick="testAiSettings()">🔌 测试连接</button>
+      <button class="btn btn-primary" onclick="saveAiSettingsUI()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 模态框：RSS 源 ====== -->
+<div class="modal-overlay" id="rssModal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">📡 RSS 源 → 数据邮箱</div>
+      <button class="modal-close" onclick="closeModal('rssModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group full" style="margin-bottom:10px;">
+        <div class="form-label">Feed URL</div>
+        <input class="form-input" id="rss-url" placeholder="https://hnrss.org/frontpage">
+      </div>
+      <div class="form-row" style="margin-bottom:10px;">
+        <div class="form-group">
+          <div class="form-label">备注名</div>
+          <input class="form-input" id="rss-label" placeholder="可选">
+        </div>
+        <div class="form-group">
+          <div class="form-label">导入分类</div>
+          <select class="form-select" id="rss-category">
+            <option>热点话题</option>
+            <option>行业动态</option>
+            <option>竞品内容</option>
+            <option>平台政策</option>
+            <option>AI工具</option>
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;cursor:pointer;">
+        <input type="checkbox" id="rss-proxy" checked style="accent-color:var(--accent);">
+        使用公开代理（allorigins，解决 CORS）
+      </label>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button class="btn btn-primary" onclick="addRssSource()">＋ 添加源</button>
+      </div>
+      <div id="rssSourceList" style="font-size:13px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 模态框：AI 草稿确认 ====== -->
+<div class="modal-overlay" id="aiConfirmModal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title" id="aiConfirmTitle">AI 草稿确认</div>
+      <button class="modal-close" onclick="closeModal('aiConfirmModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="aiConfirmHint" style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5;"></p>
+      <div id="aiConfirmBody"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('aiConfirmModal')">取消</button>
+      <button class="btn btn-primary" id="aiConfirmApplyBtn" onclick="applyAiConfirm()">确认应用</button>
+    </div>
+  </div>
+</div>
+
 <!-- 提示条 -->
 <div class="toast" id="toast"></div>
 
 <!-- JS -->
 <script src="./_shared/js/echarts.min.js"></script>
+<script src="assets/ai.js"></script>
 <script src="assets/app.js"></script>
 <script src="assets/charts.js"></script>
 

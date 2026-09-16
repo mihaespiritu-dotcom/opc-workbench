@@ -575,6 +575,64 @@
     // Badge
     $('badge-topics').textContent = topics.length;
     $('badge-inbox').textContent = DB.inboxItems.filter(function(i) { return i.status === 'unread'; }).length;
+
+    // T+3 复盘债务
+    renderT3Debt();
+  }
+
+  function renderT3Debt() {
+    var listEl = $('dash-t3-list');
+    var countEl = $('dash-t3-count');
+    if (!listEl || !countEl || typeof OPCAi === 'undefined') return;
+    var debts = OPCAi.getReviewDebts(DB.topics, DB.dataRecords);
+    countEl.textContent = String(debts.length);
+    countEl.className = debts.length ? 'tag tag-yellow' : 'tag tag-green';
+    if (!debts.length) {
+      listEl.innerHTML = '<div class="empty-state" style="padding:12px;"><div class="empty-text">暂无到期复盘债务 ✓</div></div>';
+      return;
+    }
+    var html = '';
+    debts.slice(0, 6).forEach(function(d) {
+      var t = d.topic;
+      var days = OPCAi.daysSince(d.publishedAt);
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--rule);">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (t.title || '—') + '</div>' +
+          '<div style="font-size:11px;color:var(--muted);">发布已 ' + days + ' 天</div>' +
+        '</div>' +
+        '<button class="btn btn-sm btn-primary" onclick="goReviewForTopic(\'' + t.id + '\')">去复盘</button>' +
+        '<button class="btn btn-sm" onclick="clearT3Debt(\'' + t.id + '\')">忽略</button>' +
+      '</div>';
+    });
+    listEl.innerHTML = html;
+  }
+
+  function goReviewForTopic(id) {
+    navigate('review');
+    var t = DB.topics.find(function(x) { return x.id === id; });
+    if (t) {
+      setTimeout(function() {
+        var done = $('daily-done');
+        if (done && !done.value.trim()) {
+          done.value = '复盘内容：「' + t.title + '」（T+3）';
+        }
+      }, 50);
+    }
+  }
+
+  function clearT3Debt(id) {
+    DB.updateTopic(id, { t3Cleared: true });
+    showToast('已清除 T+3 债务');
+    renderT3Debt();
+  }
+
+  function startTopicWithDraft(id) {
+    var t = DB.topics.find(function(x) { return x.id === id; });
+    if (!t) return;
+    updateTopicStatus(id, '创作中');
+    renderTopics();
+    renderBoard();
+    setTimeout(function() { openProcessModal(id); }, 200);
   }
 
   // ========== 数据邮箱 ==========
@@ -663,7 +721,8 @@
         // 已归档：显示恢复
         html += '<button class="btn btn-sm" onclick="restoreInboxItem(\'' + item.id + '\')" title="恢复" style="font-size:11px;">♻️ 恢复</button>';
       } else {
-        // 正常状态：转选题 + 收藏 + 归档
+        // 正常状态：AI 澄清 + 转选题 + 收藏 + 归档
+        html += '<button class="btn btn-sm" onclick="aiInboxClarify(\'' + item.id + '\')" title="AI 澄清建议" style="font-size:11px;">🤖 AI</button>';
         html += '<button class="btn btn-primary btn-sm" onclick="convertInboxToTopic(\'' + item.id + '\')" title="转为选题">➕ 选题</button>';
         html += '<button class="btn btn-sm" onclick="toggleInboxStar(\'' + item.id + '\')" title="收藏">' + (item.starred ? '⭐' : '☆') + '</button>';
         html += '<button class="btn btn-sm btn-danger" onclick="archiveInboxItem(\'' + item.id + '\')" title="归档">📦</button>';
@@ -972,6 +1031,8 @@
         '<td style="font-size:12px;">' + (t.platforms || '—') + '</td>' +
         '<td>' + statusHtml + '</td>' +
         '<td style="white-space:nowrap;">' +
+          ((t.status === '灵感' || t.status === '待评估' || t.status === '已排期') ?
+            '<button class="btn btn-sm btn-primary" onclick="startTopicWithDraft(\'' + t.id + '\')" title="开工并建内容草稿" style="font-size:11px;">开工</button> ' : '') +
           '<button class="btn btn-sm" onclick="editTopic(\'' + t.id + '\')">✏</button> ' +
           '<button class="btn btn-sm btn-danger" id="del-btn-' + t.id + '" onclick="deleteTopicConfirm(\'' + t.id + '\')">🗑</button>' +
         '</td>' +
@@ -1370,6 +1431,15 @@
       status: $('topic-status').value,
       note: $('topic-note').value.trim()
     };
+    if (data.status === '已发布' && !data.publishedAt) {
+      if (id) {
+        var oldT = DB.topics.find(function(x) { return x.id === id; });
+        if (!oldT || !oldT.publishedAt) data.publishedAt = new Date().toISOString();
+        else data.publishedAt = oldT.publishedAt;
+      } else {
+        data.publishedAt = new Date().toISOString();
+      }
+    }
     if (id) {
       DB.updateTopic(id, data);
       showToast('选题已更新');
@@ -1431,8 +1501,33 @@
   }
 
   function updateTopicStatus(id, status) {
-    DB.updateTopic(id, { status: status });
+    var updates = { status: status };
+    if (status === '已发布') {
+      var t = DB.topics.find(function(x) { return x.id === id; });
+      if (t && !t.publishedAt) updates.publishedAt = new Date().toISOString();
+    }
+    if (status === '创作中') {
+      var t2 = DB.topics.find(function(x) { return x.id === id; });
+      if (t2) {
+        var proc = Object.assign({}, t2.processing || {});
+        if (!proc.status || proc.status === 'none') {
+          proc.role = proc.role || 'parent';
+          proc.status = 'processing';
+          proc.adaptations = proc.adaptations || [];
+          if (!proc.notes) {
+            proc.notes = (t2.note || '') + (t2.note ? '\n\n' : '') +
+              '【内容草稿】\n# ' + (t2.title || '') + '\n\n## 大纲\n- Hook\n- 核心观点\n- 案例/论据\n- CTA';
+          }
+          updates.processing = proc;
+        }
+      }
+    }
+    DB.updateTopic(id, updates);
     showToast('状态已更新为：' + status);
+    if (status === '创作中') {
+      // 轻微提示：已初始化加工草稿
+      setTimeout(function() { showToast('已开工：加工草稿已写入（可在内容看板编辑）'); }, 400);
+    }
   }
 
   function editTopic(id) { openTopicModal(id); }
@@ -2273,7 +2368,7 @@
     var t1 = DB.addTopic({
       title: 'AI 手机大战全面开打', source: '百度热搜', form: '短视频',
       traffic: 5, difficulty: 4, match: 5, timeliness: 4, monetization: 5, reuse: 5,
-      platforms: '抖音/视频号', status: '已发布', note: '本周重点',
+      platforms: '抖音/视频号', status: '已发布', publishedAt: '2026-07-28T10:00:00.000Z', note: '本周重点',
       fromInboxId: ib1.id, fromInboxMeta: { category: ib1.category, heat: ib1.heat, summary: ib1.summary, suggestForm: ib1.suggestForm },
       processing: { role: 'parent', status: 'done', adaptations: [{platform:'抖音',status:'done'},{platform:'视频号',status:'done'}], notes: '热点选题，已发布' }
     });
@@ -2283,7 +2378,7 @@
     var t2 = DB.addTopic({
       title: '某头部博主月入百万复盘拆解', source: 'B站', form: '中长视频',
       traffic: 5, difficulty: 3, match: 4, timeliness: 5, monetization: 5, reuse: 4,
-      platforms: 'B站', status: '已发布', note: '竞品拆解类',
+      platforms: 'B站', status: '已发布', publishedAt: '2026-07-26T10:00:00.000Z', note: '竞品拆解类',
       fromInboxId: ib2.id, fromInboxMeta: { category: ib2.category, heat: ib2.heat, summary: ib2.summary, suggestForm: ib2.suggestForm },
       processing: { role: 'parent', status: 'done', adaptations: [{platform:'B站',status:'done'}], notes: '竞品分析' }
     });
@@ -2303,13 +2398,13 @@
     DB.addTopic({
       title: 'AI 工具实测：5 款提效 300% 的神器', source: '评论区高频问题', form: '中长视频',
       traffic: 5, difficulty: 4, match: 5, timeliness: 4, monetization: 5, reuse: 5,
-      platforms: 'B站/YouTube', status: '已发布', note: '本周重点',
+      platforms: 'B站/YouTube', status: '已发布', publishedAt: '2026-07-20T10:00:00.000Z', note: '本周重点',
       processing: { role: 'parent', status: 'done', adaptations: [{platform:'B站',status:'done'},{platform:'YouTube',status:'done'},{platform:'公众号',status:'done'},{platform:'抖音',status:'done'},{platform:'小红书',status:'done'}], notes: '母内容为B站长视频，已适配全平台' }
     });
     DB.addTopic({
       title: '新手做自媒体最容易踩的 7 个坑', source: '个人经验总结', form: '深度图文',
       traffic: 4, difficulty: 5, match: 4, timeliness: 5, monetization: 2, reuse: 4,
-      platforms: '公众号', status: '已发布', note: '',
+      platforms: '公众号', status: '已发布', publishedAt: '2026-07-22T10:00:00.000Z', note: '',
       processing: { role: 'parent', status: 'done', adaptations: [{platform:'公众号',status:'done'},{platform:'小红书',status:'done'},{platform:'视频号',status:'done'}], notes: '公众号深度文为母内容' }
     });
     DB.addTopic({
@@ -2404,6 +2499,377 @@
     showToast('示例数据已重置（8 选题 + 20 数据 + 20 邮箱，数据已关联）');
     navigate('dashboard');
   }
+
+
+  // ========== 增强能力：AI / RSS / CSV / T+3 / 开工 ==========
+  var _aiConfirmHandler = null;
+
+  function requireAi() {
+    if (typeof OPCAi === 'undefined') {
+      showToast('AI 模块未加载');
+      return false;
+    }
+    if (!OPCAi.hasAiKey()) {
+      showToast('请先配置 API Key');
+      openAiSettings();
+      return false;
+    }
+    return true;
+  }
+
+  function openAiSettings() {
+    if (typeof OPCAi === 'undefined') { showToast('AI 模块未加载'); return; }
+    var s = OPCAi.loadAiSettings();
+    $('ai-baseURL').value = s.baseURL || '';
+    $('ai-apiKey').value = s.apiKey || '';
+    $('ai-model').value = s.model || '';
+    var msg = $('aiSettingsMsg');
+    if (msg) { msg.textContent = ''; msg.style.color = ''; }
+    $('aiSettingsModal').classList.add('show');
+  }
+
+  function saveAiSettingsUI() {
+    var s = {
+      baseURL: $('ai-baseURL').value.trim(),
+      apiKey: $('ai-apiKey').value,
+      model: $('ai-model').value.trim()
+    };
+    OPCAi.saveAiSettings(s);
+    var msg = $('aiSettingsMsg');
+    if (msg) { msg.style.color = 'var(--green)'; msg.textContent = '已保存到本机 localStorage'; }
+    showToast('AI 配置已保存');
+  }
+
+  function clearAiSettings() {
+    OPCAi.saveAiSettings(Object.assign({}, OPCAi.DEFAULT_AI));
+    $('ai-baseURL').value = OPCAi.DEFAULT_AI.baseURL;
+    $('ai-apiKey').value = '';
+    $('ai-model').value = OPCAi.DEFAULT_AI.model;
+    var msg = $('aiSettingsMsg');
+    if (msg) { msg.style.color = 'var(--muted)'; msg.textContent = '已清空本机 AI 配置'; }
+    showToast('已清空 AI 配置');
+  }
+
+  function testAiSettings() {
+    saveAiSettingsUI();
+    var msg = $('aiSettingsMsg');
+    if (msg) { msg.style.color = 'var(--muted)'; msg.textContent = '测试中…'; }
+    OPCAi.testAiConnection(OPCAi.loadAiSettings()).then(function(reply) {
+      if (msg) { msg.style.color = 'var(--green)'; msg.textContent = '连接成功：' + String(reply).slice(0, 80); }
+      showToast('连接成功');
+    }).catch(function(e) {
+      if (msg) { msg.style.color = 'var(--red)'; msg.textContent = e.message || String(e); }
+      showToast(e.message || '连接失败');
+    });
+  }
+
+  function openAiConfirm(title, hint, bodyHtml, onApply) {
+    $('aiConfirmTitle').textContent = title || 'AI 草稿确认';
+    $('aiConfirmHint').textContent = hint || '请确认后应用；取消不会写入。';
+    $('aiConfirmBody').innerHTML = bodyHtml || '';
+    _aiConfirmHandler = onApply;
+    $('aiConfirmModal').classList.add('show');
+  }
+
+  function applyAiConfirm() {
+    if (typeof _aiConfirmHandler === 'function') {
+      try { _aiConfirmHandler(); } catch (e) { showToast(e.message || String(e)); return; }
+    }
+    _aiConfirmHandler = null;
+    closeModal('aiConfirmModal');
+  }
+
+  function openFirstTopicForAiScore() {
+    navigate('topics');
+    var t = DB.topics.find(function(x) { return x.status === '灵感' || x.status === '待评估'; }) || DB.topics[0];
+    if (t) setTimeout(function() { openTopicModal(t.id); }, 80);
+    else showToast('暂无选题');
+  }
+
+  function aiInboxClarify(id) {
+    if (!requireAi()) return;
+    var item = DB.inboxItems.find(function(i) { return i.id === id; });
+    if (!item) return;
+    showToast('AI 分析中…');
+    OPCAi.chatCompletion(OPCAi.Prompts.inboxClarify(item.title || '', item.summary || '', item.url || ''))
+      .then(function(raw) {
+        var data = OPCAi.extractJsonObject(raw);
+        var body =
+          '<div class="form-group full" style="margin-bottom:8px;"><div class="form-label">建议标题</div>' +
+          '<input class="form-input" id="ai-c-title" value="' + escapeAttr(data.title_suggestion || item.title || '') + '"></div>' +
+          '<div class="form-row" style="margin-bottom:8px;">' +
+          '<div class="form-group"><div class="form-label">分类</div><input class="form-input" id="ai-c-cat" value="' + escapeAttr(data.category || item.category || '') + '"></div>' +
+          '<div class="form-group"><div class="form-label">建议形式</div><input class="form-input" id="ai-c-form" value="' + escapeAttr(data.suggestForm || item.suggestForm || '') + '"></div>' +
+          '</div>' +
+          '<div class="form-group full" style="margin-bottom:8px;"><div class="form-label">摘要建议</div>' +
+          '<textarea class="form-textarea" id="ai-c-summary" style="min-height:70px;">' + escapeHtml(data.summary_suggestion || item.summary || '') + '</textarea></div>' +
+          '<div style="font-size:12px;color:var(--muted);">理由：' + escapeHtml(data.reason || '') + '</div>';
+        openAiConfirm('邮箱澄清建议', '确认后写入该情报条目（不会自动转选题）', body, function() {
+          item.title = $('ai-c-title').value.trim() || item.title;
+          item.category = $('ai-c-cat').value.trim() || item.category;
+          item.suggestForm = $('ai-c-form').value.trim() || item.suggestForm;
+          item.summary = $('ai-c-summary').value.trim() || item.summary;
+          item.aiDraftConfirmed = true;
+          DB.save();
+          renderInbox();
+          showToast('已应用 AI 澄清建议');
+        });
+      })
+      .catch(function(e) { showToast(e.message || String(e)); });
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/"/g, '&quot;');
+  }
+
+  function aiTopicScoreFromModal() {
+    if (!requireAi()) return;
+    var title = $('topic-title').value.trim();
+    if (!title) { showToast('请先填写标题'); return; }
+    var note = $('topic-note').value.trim();
+    showToast('AI 评分中…');
+    OPCAi.chatCompletion(OPCAi.Prompts.topicScore(title, note))
+      .then(function(raw) {
+        var data = OPCAi.extractJsonObject(raw);
+        var body =
+          '<div class="form-row" style="margin-bottom:8px;">' +
+          '<div class="form-group"><div class="form-label">流量</div><input class="form-input" type="number" id="ai-s-t" min="1" max="5" value="' + (data.traffic || 3) + '"></div>' +
+          '<div class="form-group"><div class="form-label">难度</div><input class="form-input" type="number" id="ai-s-d" min="1" max="5" value="' + (data.difficulty || 3) + '"></div>' +
+          '<div class="form-group"><div class="form-label">匹配</div><input class="form-input" type="number" id="ai-s-m" min="1" max="5" value="' + (data.match || 3) + '"></div>' +
+          '</div><div style="font-size:12px;color:var(--muted);">理由：' + escapeHtml(data.reason || '') + '</div>';
+        openAiConfirm('选题三维评分建议', '确认后填入当前选题表单，仍需点「保存」入库', body, function() {
+          $('topic-traffic').value = clampScore($('ai-s-t').value);
+          $('topic-difficulty').value = clampScore($('ai-s-d').value);
+          $('topic-match').value = clampScore($('ai-s-m').value);
+          updateTopicScore();
+          showToast('已填入评分，请确认后保存选题');
+        });
+      })
+      .catch(function(e) { showToast(e.message || String(e)); });
+  }
+
+  function clampScore(v) {
+    var n = parseInt(v, 10);
+    if (!n || n < 1) return 1;
+    if (n > 5) return 5;
+    return n;
+  }
+
+  function aiTopicScoreFromScoreModal() {
+    if (!requireAi()) return;
+    var id = $('score-topic-id').value;
+    if (!id) { showToast('请先选择内容'); return; }
+    var t = DB.topics.find(function(x) { return x.id === id; });
+    if (!t) return;
+    showToast('AI 评分中…');
+    OPCAi.chatCompletion(OPCAi.Prompts.topicScore(t.title || '', t.note || ''))
+      .then(function(raw) {
+        var data = OPCAi.extractJsonObject(raw);
+        $('score-traffic').value = clampScore(data.traffic);
+        $('score-difficulty').value = clampScore(data.difficulty);
+        $('score-match').value = clampScore(data.match);
+        updateScoreTotal();
+        var reasonEl = $('ai-score-reason');
+        if (reasonEl) reasonEl.textContent = 'AI：' + (data.reason || '已填入三维分，请确认后保存');
+        showToast('AI 建议已填入，确认后点保存');
+      })
+      .catch(function(e) { showToast(e.message || String(e)); });
+  }
+
+  function aiDailyReviewDraft() {
+    if (!requireAi()) return;
+    navigate('review');
+    var today = new Date().toISOString().slice(0, 10);
+    var weekData = DB.dataRecords.filter(function(d) {
+      return d.date && d.date.slice(0, 10) >= new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    });
+    var topicsDoing = DB.topics.filter(function(t) { return t.status === '创作中' || t.status === '已排期'; });
+    var summary = [
+      '日期：' + today,
+      '近两日数据条数：' + weekData.length,
+      '数据摘要：' + weekData.slice(0, 8).map(function(d) {
+        return (d.date || '') + ' ' + (d.platform || '') + '《' + (d.title || '') + '》播放' + (d.views || 0);
+      }).join('；'),
+      '进行中选题：' + topicsDoing.map(function(t) { return t.title; }).join('、'),
+      '已有表单完成：' + ($('daily-done') && $('daily-done').value || '无')
+    ].join('\n');
+    showToast('AI 生成日复盘草稿…');
+    OPCAi.chatCompletion(OPCAi.Prompts.dailyReview(summary))
+      .then(function(raw) {
+        var data = OPCAi.extractJsonObject(raw);
+        var body =
+          '<div class="form-group full" style="margin-bottom:8px;"><div class="form-label">状态</div>' +
+          '<input class="form-input" id="ai-r-mood" value="' + escapeAttr(data.mood || '✅ 正常') + '"></div>' +
+          '<div class="form-group full" style="margin-bottom:8px;"><div class="form-label">完成</div>' +
+          '<textarea class="form-textarea" id="ai-r-done" style="min-height:60px;">' + escapeHtml(data.done || '') + '</textarea></div>' +
+          '<div class="form-group full" style="margin-bottom:8px;"><div class="form-label">亮点</div>' +
+          '<textarea class="form-textarea" id="ai-r-hi" style="min-height:50px;">' + escapeHtml(data.highlight || '') + '</textarea></div>' +
+          '<div class="form-group full" style="margin-bottom:8px;"><div class="form-label">反思</div>' +
+          '<textarea class="form-textarea" id="ai-r-re" style="min-height:50px;">' + escapeHtml(data.reflect || '') + '</textarea></div>' +
+          '<div class="form-group full"><div class="form-label">明日</div>' +
+          '<textarea class="form-textarea" id="ai-r-tm" style="min-height:40px;">' + escapeHtml(data.tomorrow || '') + '</textarea></div>';
+        openAiConfirm('日复盘草稿', '确认后填入日复盘表单，仍需点「保存日复盘」入库', body, function() {
+          if ($('daily-mood')) $('daily-mood').value = $('ai-r-mood').value;
+          if ($('daily-done')) $('daily-done').value = $('ai-r-done').value;
+          if ($('daily-highlight')) $('daily-highlight').value = $('ai-r-hi').value;
+          if ($('daily-reflect')) $('daily-reflect').value = $('ai-r-re').value;
+          if ($('daily-tomorrow')) $('daily-tomorrow').value = $('ai-r-tm').value;
+          showToast('草稿已填入，请确认后保存');
+        });
+      })
+      .catch(function(e) { showToast(e.message || String(e)); });
+  }
+
+  function aiDeAiProcessNotes() {
+    if (!requireAi()) return;
+    var text = ($('proc-notes') && $('proc-notes').value || '').trim();
+    if (!text) { showToast('加工笔记为空'); return; }
+    showToast('去 AI 味改写中…');
+    OPCAi.chatCompletion(OPCAi.Prompts.deAi(text))
+      .then(function(rewritten) {
+        openAiConfirm('去 AI 味改写', '确认后替换加工笔记，仍需点「保存」入库', 
+          '<textarea class="form-textarea" id="ai-deai-text" style="min-height:160px;">' + escapeHtml(rewritten) + '</textarea>',
+          function() {
+            $('proc-notes').value = $('ai-deai-text').value;
+            showToast('已填入改写，请确认后保存加工信息');
+          });
+      })
+      .catch(function(e) { showToast(e.message || String(e)); });
+  }
+
+  // ---- RSS ----
+  function openRssModal() {
+    renderRssSourceList();
+    $('rss-url').value = '';
+    $('rss-label').value = '';
+    $('rssModal').classList.add('show');
+  }
+
+  function renderRssSourceList() {
+    var list = OPCAi.loadRssSources();
+    var el = $('rssSourceList');
+    if (!el) return;
+    if (!list.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:12px;">还没有 RSS 源。可试 https://hnrss.org/frontpage</div>';
+      return;
+    }
+    var html = '';
+    list.forEach(function(src) {
+      html += '<div style="border:1px solid var(--rule);border-radius:8px;padding:10px;margin-bottom:8px;">' +
+        '<div style="font-weight:600;margin-bottom:4px;">' + escapeHtml(src.label || src.url) + '</div>' +
+        '<div style="font-size:11px;color:var(--muted);word-break:break-all;margin-bottom:6px;">' + escapeHtml(src.url) +
+        ' · ' + escapeHtml(src.category) + (src.useProxy ? ' · 代理' : '') + '</div>' +
+        '<div style="display:flex;gap:6px;">' +
+          '<button class="btn btn-sm btn-primary" onclick="pullRssSource(\'' + src.id + '\')">拉取</button>' +
+          '<button class="btn btn-sm btn-danger" onclick="removeRssSource(\'' + src.id + '\')">删除</button>' +
+        '</div></div>';
+    });
+    el.innerHTML = html;
+  }
+
+  function addRssSource() {
+    var url = ($('rss-url').value || '').trim();
+    if (!url) { showToast('请填写 Feed URL'); return; }
+    try { new URL(url); } catch (e) { showToast('URL 无效'); return; }
+    var list = OPCAi.loadRssSources();
+    list.push({
+      id: DB.genId(),
+      url: url,
+      label: ($('rss-label').value || '').trim() || undefined,
+      category: $('rss-category').value || '热点话题',
+      useProxy: !!$('rss-proxy').checked
+    });
+    OPCAi.saveRssSources(list);
+    $('rss-url').value = '';
+    $('rss-label').value = '';
+    renderRssSourceList();
+    showToast('已添加 RSS 源');
+  }
+
+  function removeRssSource(id) {
+    var list = OPCAi.loadRssSources().filter(function(s) { return s.id !== id; });
+    OPCAi.saveRssSources(list);
+    renderRssSourceList();
+    showToast('已删除');
+  }
+
+  function pullRssSource(id) {
+    var src = OPCAi.loadRssSources().find(function(s) { return s.id === id; });
+    if (!src) return;
+    showToast('正在拉取 RSS…');
+    OPCAi.fetchRssFeed(src.url, !!src.useProxy).then(function(items) {
+      var urls = {};
+      var titles = {};
+      DB.inboxItems.forEach(function(i) {
+        if (i.url) urls[i.url] = true;
+        if (i.title) titles[String(i.title).trim().toLowerCase()] = true;
+      });
+      var added = 0;
+      items.forEach(function(it) {
+        var link = it.link || '';
+        var title = (it.title || '无标题').slice(0, 200);
+        if (link && urls[link]) return;
+        if (titles[title.trim().toLowerCase()]) return;
+        var item = {
+          id: DB.genId(),
+          title: title,
+          category: src.category || '热点话题',
+          source: 'RSS' + (src.label ? ' · ' + src.label : ''),
+          heat: 0,
+          suggestForm: '深度图文',
+          summary: (it.summary || '').slice(0, 2000),
+          url: link || '',
+          status: 'unread',
+          starred: false,
+          collectedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString()
+        };
+        DB.inboxItems.unshift(item);
+        if (link) urls[link] = true;
+        titles[title.trim().toLowerCase()] = true;
+        added++;
+      });
+      if (added > 0) { DB.save(); renderInbox(); updateBadge(); }
+      showToast(added > 0 ? ('RSS 导入 ' + added + ' 条') : '没有新条目（已去重）');
+      navigate('inbox');
+    }).catch(function(e) {
+      showToast(e.message || String(e));
+    });
+  }
+
+  // ---- Metric CSV ----
+  function importMetricCsv(ev) {
+    var file = ev && ev.target && ev.target.files && ev.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function() {
+      var result = OPCAi.parseMetricCsv(String(reader.result || ''));
+      if (!result.records.length) {
+        showToast(result.errors[0] || '没有可导入的行');
+        ev.target.value = '';
+        return;
+      }
+      result.records.forEach(function(r) {
+        DB._normalize(r);
+        DB.dataRecords.unshift(r);
+      });
+      DB.save();
+      var msg = '已导入 ' + result.records.length + ' 条';
+      if (result.skipped) msg += '，跳过 ' + result.skipped;
+      if (result.errors.length) msg += '；警告 ' + Math.min(3, result.errors.length) + ' 条';
+      showToast(msg);
+      renderDataPage();
+      if (typeof renderDashboard === 'function') renderDashboard();
+      ev.target.value = '';
+    };
+    reader.onerror = function() { showToast('读取文件失败'); ev.target.value = ''; };
+    reader.readAsText(file, 'utf-8');
+  }
+
+
   window.navigate = navigate;
   window.openTopicModal = openTopicModal;
   window.openDataModal = openDataModal;
@@ -2475,6 +2941,28 @@
     Sync.push().then(function() { showToast('✅ 同步成功'); })
       .catch(function() { showToast('❌ 同步失败'); });
   };
+
+
+  window.openAiSettings = openAiSettings;
+  window.saveAiSettingsUI = saveAiSettingsUI;
+  window.clearAiSettings = clearAiSettings;
+  window.testAiSettings = testAiSettings;
+  window.applyAiConfirm = applyAiConfirm;
+  window.openFirstTopicForAiScore = openFirstTopicForAiScore;
+  window.aiInboxClarify = aiInboxClarify;
+  window.aiTopicScoreFromModal = aiTopicScoreFromModal;
+  window.aiTopicScoreFromScoreModal = aiTopicScoreFromScoreModal;
+  window.aiDailyReviewDraft = aiDailyReviewDraft;
+  window.aiDeAiProcessNotes = aiDeAiProcessNotes;
+  window.openRssModal = openRssModal;
+  window.addRssSource = addRssSource;
+  window.removeRssSource = removeRssSource;
+  window.pullRssSource = pullRssSource;
+  window.importMetricCsv = importMetricCsv;
+  window.renderT3Debt = renderT3Debt;
+  window.goReviewForTopic = goReviewForTopic;
+  window.clearT3Debt = clearT3Debt;
+  window.startTopicWithDraft = startTopicWithDraft;
 
   // 启动
   if (document.readyState === 'loading') {
