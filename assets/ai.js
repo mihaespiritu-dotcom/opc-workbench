@@ -185,6 +185,20 @@
             '\n请写一篇可直接再改的草稿大纲。'
         }
       ];
+    },
+    multiPlatform: function (title, body) {
+      return [
+        {
+          role: 'system',
+          content:
+            '将母内容改写成三个平台版本。严格输出 JSON：{"douyin":"...","xiaohongshu":"...","wechat":"..."}。' +
+            '抖音偏口播短句；小红书偏种草清单；公众号偏深度段落。不要假装已发布。'
+        },
+        {
+          role: 'user',
+          content: '母标题：' + title + '\n母内容：\n' + (body || '')
+        }
+      ];
     }
   };
 

@@ -588,6 +588,56 @@ html[data-theme="light"] .stat-card:hover { border-color: #a8bdb2; }
 html[data-theme="light"] .modal { background: #fff; border-color: #ccd7d1; }
 html[data-theme="light"] .template-card { background: #f8faf9; }
 html[data-theme="light"] .toast { color: #fff; }
+
+/* ===== v1.2 Kanban / Pipeline / GTD / Calendar / Skills ===== */
+.view-toggle-bar { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+.kanban-board { display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; align-items:flex-start; }
+.kanban-col { flex:0 0 220px; background:var(--bg); border:1px solid var(--rule); border-radius:8px; min-height:280px; display:flex; flex-direction:column; }
+.pipeline-board .kanban-col { flex:0 0 160px; }
+.gtd-board .kanban-col { flex:1; min-width:180px; }
+.kanban-col-head { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; font-size:12px; font-weight:700; border-bottom:1px solid var(--rule); position:sticky; top:0; background:var(--bg); }
+.kanban-count { background:var(--accent-soft); color:var(--accent); font-size:11px; padding:2px 7px; border-radius:10px; font-weight:800; }
+.kanban-col-body { padding:8px; flex:1; }
+.kanban-card { background:var(--card, #151a18); border:1px solid var(--rule); border-radius:8px; padding:10px; margin-bottom:8px; cursor:grab; transition:box-shadow .15s, border-color .15s; }
+.kanban-card:active { cursor:grabbing; }
+.kanban-card:hover { border-color:var(--accent); box-shadow:0 4px 16px rgba(0,0,0,.2); }
+.kanban-card-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.grade-pill { color:#fff; font-size:11px; font-weight:800; width:22px; height:22px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; }
+.kanban-score { font-size:10px; color:var(--muted); }
+.kanban-card-title { font-size:13px; font-weight:700; line-height:1.35; margin-bottom:4px; }
+.kanban-card-meta { font-size:11px; color:var(--muted); margin-bottom:6px; }
+.kanban-card-actions { display:flex; gap:4px; flex-wrap:wrap; }
+.kanban-empty { font-size:11px; color:var(--muted); text-align:center; padding:20px 8px; border:1px dashed var(--rule); border-radius:6px; }
+.capture-item { display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--rule); flex-wrap:wrap; }
+.week-cal { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+.week-day { border:1px solid var(--rule); border-radius:8px; min-height:140px; background:var(--bg); }
+.week-day.is-today { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.week-day-head { padding:8px; font-size:12px; font-weight:700; border-bottom:1px solid var(--rule); display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:4px; }
+.week-day-body { padding:6px; }
+.week-slot { background:var(--accent-soft); border:1px solid var(--rule); border-radius:6px; padding:6px 8px; font-size:11px; margin-bottom:6px; cursor:grab; }
+.week-slot.unscheduled { background:transparent; }
+.week-strip { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+.week-strip-cell { text-align:center; padding:10px 6px; border:1px solid var(--rule); border-radius:8px; cursor:pointer; background:var(--bg); }
+.week-strip-cell.is-today { border-color:var(--accent); }
+.week-strip-cell.is-tom { border-color:var(--accent2); }
+.wsc-label { font-size:11px; color:var(--muted); }
+.wsc-count { font-size:20px; font-weight:800; margin-top:4px; }
+.wsc-count.zero { color:var(--red); }
+.wsc-tag { font-size:10px; color:var(--accent); font-weight:700; }
+.pipe-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.pipe-chip { display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 12px; border:1px solid var(--rule); border-radius:8px; background:var(--bg); cursor:pointer; min-width:64px; color:var(--ink); }
+.pipe-chip b { font-size:18px; color:var(--accent); }
+.pipe-chip span { font-size:10px; color:var(--muted); }
+.pipe-chip:hover { border-color:var(--accent); }
+.stat-zero { color: var(--red) !important; }
+.tag-red { background: rgba(220,60,60,.15); color: var(--red); }
+.dash-empty-hint { display:none; margin:12px 0 0; padding:12px 16px; border:1px solid var(--red); border-radius:8px; background:rgba(220,60,60,.08); font-size:13px; color:var(--red); line-height:1.5; }
+.skill-card textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+@media (max-width: 900px) {
+  .week-cal { grid-template-columns:repeat(2,1fr); }
+  .week-strip { grid-template-columns:repeat(4,1fr); }
+}
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 @media (max-width: 900px) {
   .hero-console { grid-template-columns: 1fr; }
@@ -639,16 +689,21 @@ html[data-theme="light"] .toast { color: #fff; }
   <nav class="sidebar-nav" id="navMenu">
     <div class="nav-section-label">OVERVIEW</div>
     <a class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span>仪表盘</a>
+    <a class="nav-item" data-page="capture"><span class="nav-icon">📥</span>收件箱<span class="nav-badge" id="badge-capture">0</span></a>
+    <a class="nav-item" data-page="tasks"><span class="nav-icon">✅</span>今日任务<span class="nav-badge" id="badge-tasks">0</span></a>
+    <div class="nav-section-label">运营</div>
     <a class="nav-item" data-page="inbox"><span class="nav-icon">📬</span>数据邮箱<span class="nav-badge" id="badge-inbox">0</span></a>
-    <div class="nav-section-label">WORKFLOW</div>
     <a class="nav-item" data-page="topics"><span class="nav-icon">💡</span>选题看板<span class="nav-badge" id="badge-topics">0</span></a>
     <a class="nav-item" data-page="board"><span class="nav-icon">🎯</span>内容看板</a>
+    <a class="nav-item" data-page="calendar"><span class="nav-icon">📅</span>本周排期</a>
     <a class="nav-item" data-page="data"><span class="nav-icon">📈</span>数据追踪</a>
     <a class="nav-item" data-page="review"><span class="nav-icon">📝</span>周复盘</a>
+    <div class="nav-section-label">系统</div>
+    <a class="nav-item" data-page="skills"><span class="nav-icon">🧩</span>Skill 库</a>
     <a class="nav-item" data-page="toolkit"><span class="nav-icon">🧰</span>SOP 工具箱</a>
   </nav>
   <div class="sidebar-footer">
-    <div>v1.1 增强 · 数据本地存储</div>
+    <div>v1.2 · 数据本地存储</div>
     <div style="margin-top:4px;">
       <a href="#" onclick="openAiSettings();return false" style="color:var(--accent);text-decoration:none;font-weight:600;">🤖 AI</a>
       <span style="margin:0 4px;">·</span>
@@ -759,6 +814,21 @@ html[data-theme="light"] .toast { color: #fff; }
         </div>
       </div>
 
+      <div class="dash-empty-hint" id="dash-empty-hint">
+        诚实零值：当前无选题、无指标数据。请「导入」备份、配置 RSS、或点「+ 记数据」开始；也可「重置示例数据」体验全流程。
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header"><div class="card-title">📅 本周档期</div><button class="btn btn-sm" onclick="navigate('calendar')">打开排期</button></div>
+        <div class="week-strip" id="dash-week-strip"></div>
+        <p style="font-size:11px;color:var(--muted);margin-top:8px;">今 / 明槽位高亮；点击进入本周排期日历。</p>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header"><div class="card-title">🛤 内容管线</div><button class="btn btn-sm" onclick="OPCV12.jumpPipeline('制作')">打开管线看板</button></div>
+        <div class="pipe-chips" id="dash-pipeline-click"></div>
+      </div>
+
       <div class="grid-2" style="margin-bottom:20px;">
         <div class="card">
           <div class="card-header">
@@ -770,15 +840,24 @@ html[data-theme="light"] .toast { color: #fff; }
           </div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">🤖 AI 快捷动作</div><span class="tag tag-muted">草稿→确认</span></div>
-          <div class="grid-2" style="gap:10px;">
-            <button class="btn btn-sm" onclick="aiDailyReviewDraft()" style="justify-content:flex-start;">📝 AI 日复盘草稿</button>
-            <button class="btn btn-sm" onclick="openFirstTopicForAiScore()" style="justify-content:flex-start;">💡 打开选题评分</button>
-            <button class="btn btn-sm" onclick="openAiSettings()" style="justify-content:flex-start;">⚙️ AI 设置</button>
-            <button class="btn btn-sm" onclick="openRssModal()" style="justify-content:flex-start;">📡 RSS 源</button>
+          <div class="card-header"><div class="card-title">✅ 今日 Top3 任务</div><button class="btn btn-sm" onclick="navigate('tasks')">全部任务</button></div>
+          <div id="dash-top3-tasks" style="font-size:13px;">
+            <div class="empty-state" style="padding:12px;"><div class="empty-text">暂无今日任务</div></div>
           </div>
-          <p style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5;">全部 AI 均为「生成草稿 → 你确认后入库」，密钥只存本机 localStorage。</p>
         </div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><div class="card-title">🤖 AI 快捷动作</div><span class="tag tag-muted">草稿→确认</span></div>
+        <div class="grid-2" style="gap:10px;">
+          <button class="btn btn-sm" onclick="aiDailyReviewDraft()" style="justify-content:flex-start;">📝 AI 日复盘草稿</button>
+          <button class="btn btn-sm" onclick="openFirstTopicForAiScore()" style="justify-content:flex-start;">💡 打开选题评分</button>
+          <button class="btn btn-sm" onclick="openAiSettings()" style="justify-content:flex-start;">⚙️ AI 设置</button>
+          <button class="btn btn-sm" onclick="openRssModal()" style="justify-content:flex-start;">📡 RSS 源</button>
+          <button class="btn btn-sm" onclick="navigate('skills')" style="justify-content:flex-start;">🧩 Skill 库</button>
+          <button class="btn btn-sm" onclick="OPCV12.openMultiPlatformDraft()" style="justify-content:flex-start;">🧬 多平台草稿</button>
+        </div>
+        <p style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5;">全部 AI 均为「生成草稿 → 你确认后入库」，密钥只存本机 localStorage。不自动发帖。</p>
       </div>
 
       <div class="grid-2">
@@ -791,6 +870,17 @@ html[data-theme="light"] .toast { color: #fff; }
           <div id="chart-dash-topics" class="chart-box"></div>
         </div>
       </div>
+    </div>
+
+
+    <!-- ====== 收件箱 Capture ====== -->
+    <div class="page" id="page-capture">
+      <div id="capturePageBody"></div>
+    </div>
+
+    <!-- ====== 今日任务 ====== -->
+    <div class="page" id="page-tasks">
+      <div id="tasksPageBody"></div>
     </div>
 
     <!-- ====== 数据邮箱 ====== -->
@@ -898,7 +988,10 @@ html[data-theme="light"] .toast { color: #fff; }
               <option value="title">标题</option>
             </select>
           </div>
-          <div style="margin-left:auto;display:flex;gap:8px;">
+          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;" id="boardViewToggle">
+            <button class="btn btn-sm btn-primary" onclick="OPCV12.setBoardView('list')">列表</button>
+            <button class="btn btn-sm" onclick="OPCV12.setBoardView('pipeline')">管线</button>
+            <button class="btn btn-sm" onclick="OPCV12.openMultiPlatformDraft()">🧬 多平台草稿</button>
             <button class="btn btn-sm" onclick="openScoreModal()">📐 多维评分</button>
             <button class="btn btn-primary btn-sm" onclick="openProcessModal()">🔧 二次加工</button>
           </div>
@@ -1070,7 +1163,18 @@ html[data-theme="light"] .toast { color: #fff; }
     </div>
 
     <!-- ====== SOP 工具箱 ====== -->
-    <div class="page" id="page-toolkit">
+    
+    <!-- ====== 本周排期 ====== -->
+    <div class="page" id="page-calendar">
+      <div id="calendarPageBody"></div>
+    </div>
+
+    <!-- ====== Skill 库 ====== -->
+    <div class="page" id="page-skills">
+      <div id="skillsPageBody"></div>
+    </div>
+
+<div class="page" id="page-toolkit">
       <div class="sop-section">
         <h3>📝 内容结构模板（点击复制）</h3>
         <div id="templateList"></div>
@@ -1158,9 +1262,15 @@ html[data-theme="light"] .toast { color: #fff; }
           </select>
         </div>
       </div>
-      <div class="form-group full">
-        <div class="form-label">备注</div>
-        <input class="form-input" id="topic-note" placeholder="补充信息">
+      <div class="form-row">
+        <div class="form-group">
+          <div class="form-label">发布档期 publishAt</div>
+          <input class="form-input" type="date" id="topic-publishAt">
+        </div>
+        <div class="form-group">
+          <div class="form-label">备注</div>
+          <input class="form-input" id="topic-note" placeholder="补充信息">
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1552,11 +1662,27 @@ html[data-theme="light"] .toast { color: #fff; }
         <input class="form-input" id="ai-model" placeholder="gpt-4o-mini">
       </div>
       <div id="aiSettingsMsg" style="font-size:12px;margin-bottom:8px;min-height:18px;"></div>
+      <hr style="border:0;border-top:1px solid var(--rule);margin:16px 0;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;">📺 YouTube Data API</div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">填写 API Key 后可用视频 ID/URL 拉取公开 statistics 写入 Metric。Key 只存本机，不进导出。</p>
+      <div class="form-group full" style="margin-bottom:12px;">
+        <div class="form-label">YouTube API Key</div>
+        <input class="form-input" id="yt-api-key" type="password" autocomplete="off" placeholder="AIza...">
+      </div>
+      <div class="form-group full" style="margin-bottom:12px;">
+        <div class="form-label">视频 ID 或 URL</div>
+        <input class="form-input" id="yt-video-input" placeholder="https://www.youtube.com/watch?v=... 或 11位ID">
+      </div>
+      <div id="yt-fetch-msg" style="font-size:12px;margin-bottom:8px;min-height:18px;"></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button class="btn" onclick="OPCV12.saveYtKeyUI()">💾 保存 Key</button>
+        <button class="btn btn-primary" onclick="OPCV12.fetchYoutubeStats()">⬇ 拉取并写入 Metric</button>
+      </div>
     </div>
     <div class="modal-footer" style="flex-wrap:wrap;">
-      <button class="btn" onclick="clearAiSettings()">清空</button>
+      <button class="btn" onclick="clearAiSettings()">清空 AI</button>
       <button class="btn" onclick="testAiSettings()">🔌 测试连接</button>
-      <button class="btn btn-primary" onclick="saveAiSettingsUI()">💾 保存</button>
+      <button class="btn btn-primary" onclick="saveAiSettingsUI()">💾 保存 AI</button>
     </div>
   </div>
 </div>
@@ -1625,6 +1751,7 @@ html[data-theme="light"] .toast { color: #fff; }
 <!-- JS -->
 <script src="./_shared/js/echarts.min.js"></script>
 <script src="assets/ai.js"></script>
+<script src="assets/v12.js"></script>
 <script src="assets/app.js"></script>
 <script src="assets/charts.js"></script>
 

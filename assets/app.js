@@ -64,12 +64,14 @@
 
   // ========== 数据管理（统一存储） ==========
   var DB = {
-    version: 2,              // 数据版本号（用于迁移）
+    version: 3,              // 数据版本号（用于迁移）v1.2 +captures/tasks/pipeline
     topics: [],
     dataRecords: [],
     reviews: [],
     dailyReviews: [],
     inboxItems: [],
+    captures: [],            // 收件箱捕获（个人 OS）
+    tasks: [],               // GTD 任务
     settings: { lastReviewWeek: '' },
 
     // ---- 统一序列化：所有模块共用 ----
@@ -81,6 +83,8 @@
         reviews: this.reviews,
         dailyReviews: this.dailyReviews,
         inboxItems: this.inboxItems,
+        captures: this.captures,
+        tasks: this.tasks,
         settings: this.settings,
         savedAt: new Date().toISOString()
       };
@@ -94,8 +98,65 @@
       if (data.reviews) this.reviews = data.reviews;
       if (data.dailyReviews) this.dailyReviews = data.dailyReviews;
       if (data.inboxItems) this.inboxItems = data.inboxItems;
+      if (data.captures) this.captures = data.captures;
+      if (data.tasks) this.tasks = data.tasks;
       if (data.settings) this.settings = Object.assign({ lastReviewWeek: '' }, data.settings);
+      if (typeof this.migrateV12 === 'function') this.migrateV12();
       this.saveToStorage();
+    },
+
+    migrateV12: function() {
+      var mapStatusToPipeline = {
+        '灵感': '灵感', '待评估': '灵感', '已排期': '大纲',
+        '创作中': '制作', '已发布': '已发布'
+      };
+      var changed = false;
+      (this.topics || []).forEach(function(t) {
+        if (!t.pipelineStage) {
+          t.pipelineStage = mapStatusToPipeline[t.status] || '灵感';
+          if (t.status === '已发布' && !t.pipelineStage) t.pipelineStage = '已发布';
+          changed = true;
+        }
+        if (t.publishAt === undefined) t.publishAt = t.publishAt || '';
+      });
+      if (!this.captures) { this.captures = []; changed = true; }
+      if (!this.tasks) { this.tasks = []; changed = true; }
+      this.version = 3;
+      return changed;
+    },
+
+    addCapture: function(c) {
+      this._normalize(c);
+      if (!c.status) c.status = 'inbox';
+      this.captures.unshift(c);
+      this.save();
+      return c;
+    },
+    updateCapture: function(id, updates) {
+      var c = this.captures.find(function(x) { return x.id === id; });
+      if (c) { Object.assign(c, updates); c.updatedAt = new Date().toISOString(); this.save(); }
+      return c;
+    },
+    deleteCapture: function(id) {
+      this.captures = this.captures.filter(function(x) { return x.id !== id; });
+      this.save();
+    },
+    addTask: function(t) {
+      this._normalize(t);
+      if (!t.gtd) t.gtd = 'today';
+      if (!t.priority) t.priority = 2;
+      this.tasks.unshift(t);
+      this.save();
+      return t;
+    },
+    updateTask: function(id, updates) {
+      var t = this.tasks.find(function(x) { return x.id === id; });
+      if (t) { Object.assign(t, updates); t.updatedAt = new Date().toISOString(); this.save(); }
+      return t;
+    },
+    deleteTask: function(id) {
+      this.tasks = this.tasks.filter(function(x) { return x.id !== id; });
+      this.save();
     },
 
     // ---- 加载：统一从单个 key 读取，兼容旧版多 key ----
@@ -245,9 +306,15 @@
       return this.config.username && this.config.repo && this.config.token;
     },
 
-    // 收集所有数据（统一使用 DB.collectData）
+    // 收集所有数据（统一使用 DB.collectData），剥离密钥
     collectData: function() {
-      return DB.collectData();
+      var data = DB.collectData();
+      if (data && data.settings) {
+        data = JSON.parse(JSON.stringify(data));
+        delete data.settings.youtubeApiKey;
+        delete data.settings.aiApiKey;
+      }
+      return data;
     },
 
     // Base64 编解码（UTF-8 安全）
@@ -497,11 +564,15 @@
   // ========== 导航 ==========
   var pageTitles = {
     dashboard: '仪表盘',
+    capture: '收件箱',
+    tasks: '今日任务',
     inbox: '数据邮箱',
     topics: '选题看板',
     board: '内容看板',
+    calendar: '本周排期',
     data: '数据追踪',
     review: '周复盘',
+    skills: 'Skill 库',
     toolkit: 'SOP 工具箱'
   };
 
@@ -513,11 +584,15 @@
     if (navItem) navItem.classList.add('active');
     $('pageTitle').textContent = pageTitles[page] || page;
     if (page === 'dashboard') renderDashboard();
+    if (page === 'capture') { if (window.OPCV12) OPCV12.renderCapture(); }
+    if (page === 'tasks') { if (window.OPCV12) OPCV12.renderTasks(); }
     if (page === 'inbox') renderInbox();
     if (page === 'topics') renderTopics();
     if (page === 'board') renderBoard();
+    if (page === 'calendar') { if (window.OPCV12) OPCV12.renderCalendar(); }
     if (page === 'data') renderDataPage();
     if (page === 'review') renderReviewPage();
+    if (page === 'skills') { if (window.OPCV12) OPCV12.renderSkills(); }
     if (page === 'toolkit') renderToolkit();
     // 移动端关闭侧边栏
     document.querySelector('.sidebar').classList.remove('open');
@@ -578,6 +653,10 @@
 
     // T+3 复盘债务
     renderT3Debt();
+    // v1.2 仪表盘横切增强
+    if (window.OPCV12 && typeof window.OPCV12.paintDashboardExtras === 'function') {
+      window.OPCV12.paintDashboardExtras();
+    }
   }
 
   function renderT3Debt() {
@@ -993,52 +1072,23 @@
 
   // ========== 选题看板 ==========
   function renderTopics() {
+    if (window.OPCV12 && typeof window.OPCV12.renderTopicsKanbanProxy === 'function') {
+      return window.OPCV12.renderTopicsKanbanProxy();
+    }
+    // fallback table (v12 未加载)
     var filter = $('topicFilter') ? $('topicFilter').value : '';
     var topics = DB.topics;
-    if (filter) {
-      topics = topics.filter(function(t) { return t.status === filter; });
-    }
-
+    if (filter) topics = topics.filter(function(t) { return t.status === filter; });
     var wrap = $('topicsTableWrap');
+    if (!wrap) return;
     if (topics.length === 0) {
-      wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">💡</div><div class="empty-text">' +
-        (filter ? '该状态下暂无选题' : '还没有选题，点击「新选题」开始记录灵感') + '</div></div>';
+      wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">💡</div><div class="empty-text">还没有选题</div></div>';
       return;
     }
-
-    var html = '<div class="table-wrap"><table><thead><tr>' +
-      '<th>标题</th><th>来源</th><th>流量</th><th>难度</th><th>匹配</th><th>总分</th>' +
-      '<th>形式</th><th>平台</th><th>状态</th><th>操作</th>' +
-      '</tr></thead><tbody>';
-
+    var html = '<div class="table-wrap"><table><thead><tr><th>标题</th><th>状态</th><th>操作</th></tr></thead><tbody>';
     topics.forEach(function(t) {
-      var score = (t.traffic || 0) * (t.difficulty || 0) * (t.match || 0);
-      var statusOpts = ['灵感', '待评估', '已排期', '创作中', '已发布'];
-      var statusHtml = '<select class="form-select" style="font-size:11px;padding:2px 6px;width:auto;" onchange="updateTopicStatus(\'' + t.id + '\', this.value)">';
-      statusOpts.forEach(function(s) {
-        statusHtml += '<option value="' + s + '"' + (s === t.status ? ' selected' : '') + '>' + s + '</option>';
-      });
-      statusHtml += '</select>';
-
-      html += '<tr>' +
-        '<td style="font-weight:600;max-width:200px;">' + (t.title || '') + '</td>' +
-        '<td style="color:var(--muted);font-size:12px;">' + (t.source || '—') + '</td>' +
-        '<td>' + (t.traffic || '—') + '</td>' +
-        '<td>' + (t.difficulty || '—') + '</td>' +
-        '<td>' + (t.match || '—') + '</td>' +
-        '<td>' + scoreTag(score) + '</td>' +
-        '<td><span class="tag tag-accent">' + (t.form || '—') + '</span></td>' +
-        '<td style="font-size:12px;">' + (t.platforms || '—') + '</td>' +
-        '<td>' + statusHtml + '</td>' +
-        '<td style="white-space:nowrap;">' +
-          ((t.status === '灵感' || t.status === '待评估' || t.status === '已排期') ?
-            '<button class="btn btn-sm btn-primary" onclick="startTopicWithDraft(\'' + t.id + '\')" title="开工并建内容草稿" style="font-size:11px;">开工</button> ' : '') +
-          '<button class="btn btn-sm" onclick="editTopic(\'' + t.id + '\')">✏</button> ' +
-          '<button class="btn btn-sm btn-danger" id="del-btn-' + t.id + '" onclick="deleteTopicConfirm(\'' + t.id + '\')">🗑</button>' +
-        '</td>' +
-        '</tr>';
+      html += '<tr><td>' + (t.title||'') + '</td><td>' + (t.status||'') + '</td><td><button class="btn btn-sm" onclick="editTopic(\'' + t.id + '\')">✏</button></td></tr>';
     });
-
     html += '</tbody></table></div>';
     wrap.innerHTML = html;
   }
@@ -1072,6 +1122,13 @@
   var gradeLabels = { S: 'S 级 · 优先', A: 'A 级 · 重点', B: 'B 级 · 常规', C: 'C 级 · 备选' };
 
   function renderBoard() {
+    if (window.OPCV12 && window.OPCV12._boardReady && window.OPCV12.getBoardView() === 'pipeline') {
+      return window.OPCV12.renderBoardEnhancedProxy();
+    }
+    if (window.OPCV12 && window.OPCV12._boardReady && window.OPCV12.getBoardView() === 'list') {
+      // continue original list, but refresh toolbar
+      if (typeof window.OPCV12.refreshBoardToolbar === 'function') window.OPCV12.refreshBoardToolbar();
+    }
     var topics = DB.topics.slice();
 
     // 筛选
@@ -1384,6 +1441,7 @@
         $('topic-platforms').value = t.platforms || '';
         $('topic-status').value = t.status || '灵感';
         $('topic-note').value = t.note || '';
+        if ($('topic-publishAt')) $('topic-publishAt').value = t.publishAt || '';
         $('topicModal').querySelector('.modal-title').textContent = '编辑选题';
       }
     } else {
@@ -1404,6 +1462,7 @@
     $('topic-platforms').value = '';
     $('topic-status').value = '灵感';
     $('topic-note').value = '';
+    if ($('topic-publishAt')) $('topic-publishAt').value = '';
   }
 
   function updateTopicScore() {
@@ -1431,6 +1490,16 @@
       status: $('topic-status').value,
       note: $('topic-note').value.trim()
     };
+    var pubAtEl = $('topic-publishAt');
+    if (pubAtEl && pubAtEl.value) data.publishAt = pubAtEl.value;
+    else if (pubAtEl) data.publishAt = '';
+    // 状态变更时同步默认管线阶段（若用户未手动设过可覆盖默认）
+    var statusPipeline = { '灵感':'灵感','待评估':'灵感','已排期':'大纲','创作中':'制作','已发布':'已发布' };
+    if (!id) data.pipelineStage = statusPipeline[data.status] || '灵感';
+    else {
+      var oldKeep = DB.topics.find(function(x) { return x.id === id; });
+      if (oldKeep && !oldKeep.pipelineStage) data.pipelineStage = statusPipeline[data.status] || '灵感';
+    }
     if (data.status === '已发布' && !data.publishedAt) {
       if (id) {
         var oldT = DB.topics.find(function(x) { return x.id === id; });
@@ -1502,6 +1571,8 @@
 
   function updateTopicStatus(id, status) {
     var updates = { status: status };
+    var statusPipeline = { '灵感':'灵感','待评估':'灵感','已排期':'大纲','创作中':'制作','已发布':'已发布' };
+    if (statusPipeline[status]) updates.pipelineStage = statusPipeline[status];
     if (status === '已发布') {
       var t = DB.topics.find(function(x) { return x.id === id; });
       if (t && !t.publishedAt) updates.publishedAt = new Date().toISOString();
@@ -1533,7 +1604,10 @@
   function editTopic(id) { openTopicModal(id); }
 
   function updateBadge() {
-    $('badge-topics').textContent = DB.topics.length;
+    if ($('badge-topics')) $('badge-topics').textContent = DB.topics.length;
+    if ($('badge-inbox')) $('badge-inbox').textContent = DB.inboxItems.filter(function(i) { return i.status === 'unread'; }).length;
+    if ($('badge-capture')) $('badge-capture').textContent = (DB.captures || []).filter(function(c) { return c.status === 'inbox'; }).length;
+    if ($('badge-tasks')) $('badge-tasks').textContent = (DB.tasks || []).filter(function(x) { return x.gtd === 'today'; }).length;
   }
 
   // ========== 数据追踪 ==========
@@ -2192,7 +2266,12 @@
 
   // ========== 导入导出 ==========
   function exportData() {
-    var allData = DB.collectData();
+    var allData = JSON.parse(JSON.stringify(DB.collectData()));
+    // 不导出任何 API Key
+    if (allData.settings) {
+      delete allData.settings.youtubeApiKey;
+      delete allData.settings.aiApiKey;
+    }
     var blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -2265,6 +2344,11 @@
       if (i.starred === undefined) i.starred = false;
     });
     if (migrated) DB.save('inbox');
+
+    if (typeof DB.migrateV12 === 'function') {
+      DB.migrateV12();
+      DB.save();
+    }
 
     Sync.loadConfig();
     updateThemeControl();
@@ -2480,6 +2564,35 @@
       { id: DB.genId(), date: '2026-07-28', mood: '✅ 正常', done: '调研 B站变现新政策，开始写深度图文', highlight: '月入百万复盘 B站播放 12500', reflect: '竞品拆解类内容数据稳定', tomorrow: '完成变现政策文章初稿', createdAt: now, updatedAt: now }
     ];
 
+    // ===== 5. v1.2：管线阶段 / 档期 / 收件箱 / GTD 任务 =====
+    function _isoOffset(days) {
+      var d = new Date();
+      d.setDate(d.getDate() + days);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    var stageByStatus = { '灵感': '灵感', '待评估': '灵感', '已排期': '大纲', '创作中': '制作', '已发布': '已发布' };
+    DB.topics.forEach(function(tp, idx) {
+      if (!tp.pipelineStage) tp.pipelineStage = stageByStatus[tp.status] || '灵感';
+      if (tp.status === '已排期' || tp.status === '创作中') {
+        if (!tp.publishAt) tp.publishAt = _isoOffset(idx % 5);
+      }
+      if (tp.status === '已发布' && !tp.pipelineStage) tp.pipelineStage = '已发布';
+    });
+    // 一条进复盘阶段
+    var published = DB.topics.filter(function(x) { return x.status === '已发布'; })[0];
+    if (published) published.pipelineStage = '复盘';
+
+    DB.captures = [
+      { id: DB.genId(), text: '观众私信问「一人公司怎么选第一个平台」——可做成选题', status: 'inbox', createdAt: now, updatedAt: now },
+      { id: DB.genId(), text: '下周找设计师出 3 张封面模板', status: 'inbox', createdAt: now, updatedAt: now }
+    ];
+    DB.tasks = [
+      { id: DB.genId(), title: '写本周北极星一句话目标', gtd: 'today', priority: 1, createdAt: now, updatedAt: now },
+      { id: DB.genId(), title: '给创作中选题补大纲', gtd: 'today', priority: 2, createdAt: now, updatedAt: now },
+      { id: DB.genId(), title: '录一条抖音口播 demo', gtd: 'next', priority: 2, createdAt: now, updatedAt: now },
+      { id: DB.genId(), title: '等剪辑返片', gtd: 'waiting', priority: 2, waitingSince: new Date(Date.now() - 4 * 86400000).toISOString(), createdAt: now, updatedAt: now }
+    ];
+
     // 统一保存
     DB.save();
     renderDashboard();
@@ -2493,10 +2606,12 @@
     DB.reviews = [];
     DB.dailyReviews = [];
     DB.inboxItems = [];
+    DB.captures = [];
+    DB.tasks = [];
     DB.save();
     // 重新加载示例数据
     addSampleData();
-    showToast('示例数据已重置（8 选题 + 20 数据 + 20 邮箱，数据已关联）');
+    showToast('示例数据已重置（含 v1.2 收件箱/任务/档期）');
     navigate('dashboard');
   }
 
@@ -2870,6 +2985,39 @@
   }
 
 
+  // v1.2：暴露核心给增强模块
+  window.OPCDB = DB;
+  window.OPCCore = {
+    DB: DB,
+    $: $,
+    $$: $$,
+    showToast: showToast,
+    fmtNum: fmtNum,
+    getEngagementRate: getEngagementRate,
+    scoreTag: scoreTag,
+    calcFullScore: calcFullScore,
+    calcGrade: calcGrade,
+    gradeColors: gradeColors,
+    updateTopicStatus: updateTopicStatus,
+    editTopic: editTopic,
+    deleteTopicConfirm: deleteTopicConfirm,
+    startTopicWithDraft: startTopicWithDraft,
+    openProcessModal: openProcessModal,
+    openScoreModal: openScoreModal,
+    openTopicModal: openTopicModal,
+    openDataModal: openDataModal,
+    openDailyModal: openDailyModal,
+    openRssModal: openRssModal,
+    openAiSettings: openAiSettings,
+    navigate: navigate,
+    updateBadge: updateBadge,
+    escapeHtml: escapeHtml,
+    escapeAttr: escapeAttr,
+    requireAi: requireAi,
+    openAiConfirm: openAiConfirm,
+    BOARD_PLATFORMS: BOARD_PLATFORMS
+  };
+
   window.navigate = navigate;
   window.openTopicModal = openTopicModal;
   window.openDataModal = openDataModal;
@@ -2963,6 +3111,11 @@
   window.goReviewForTopic = goReviewForTopic;
   window.clearT3Debt = clearT3Debt;
   window.startTopicWithDraft = startTopicWithDraft;
+
+  // v1.2 boot hook（在 init 前注册增强）
+  if (window.OPCV12 && typeof window.OPCV12.boot === 'function') {
+    window.OPCV12.boot(window.OPCCore);
+  }
 
   // 启动
   if (document.readyState === 'loading') {
